@@ -1,0 +1,392 @@
+import { useState, useEffect } from "react";
+
+const GOALS = [
+  { id: 1, label: "Ghar Repair & New Construction", emoji: "🏠", target: 300000, color: "#F7C948" },
+  { id: 2, label: "Ghar ka Saman (Furniture etc.)", emoji: "🛋️", target: 50000, color: "#F7C948" },
+  { id: 3, label: "Bike (Pulsar N160) + Helmet + Accessories", emoji: "🏍️", target: 170000, color: "#F7C948" },
+  { id: 4, label: "Tools for Gaon Work", emoji: "🔧", target: 20000, color: "#F7C948" },
+  { id: 5, label: "Business Setup (Gaon mein)", emoji: "⚡", target: 150000, color: "#F7C948" },
+  { id: 6, label: "3 Month Ghar Kharcha (Ration/Food/Medicine)", emoji: "🍱", target: 45000, color: "#F7C948" },
+  { id: 7, label: "Emergency Fund", emoji: "🛡️", target: 50000, color: "#F7C948" },
+];
+
+const TOTAL_TARGET = GOALS.reduce((s, g) => s + g.target, 0);
+
+const fmtINR = (n) =>
+  "₹" + Number(n).toLocaleString("en-IN");
+
+const today = new Date();
+
+function daysUntil(dateStr) {
+  const d = new Date(dateStr);
+  const diff = d - today;
+  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+}
+
+function etaFromSavings(saved, target, monthlySaving) {
+  const remaining = target - saved;
+  if (remaining <= 0) return "Ready! ✅";
+  if (!monthlySaving || monthlySaving <= 0) return "—";
+  const months = remaining / monthlySaving;
+  const eta = new Date();
+  eta.setMonth(eta.getMonth() + Math.ceil(months));
+  return eta.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+}
+
+const STORAGE_KEY = "hses_bihar_tracker_v1";
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveData(data) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+}
+
+export default function BiharTracker() {
+  const [savings, setSavings] = useState(() => {
+    const d = loadData();
+    return d?.savings || GOALS.reduce((acc, g) => ({ ...acc, [g.id]: 0 }), {});
+  });
+  const [monthly, setMonthly] = useState(() => loadData()?.monthly || 15000);
+  const [targetDate, setTargetDate] = useState(() => loadData()?.targetDate || "2027-01-01");
+  const [addAmounts, setAddAmounts] = useState(GOALS.reduce((acc, g) => ({ ...acc, [g.id]: "" }), {}));
+  const [activeGoal, setActiveGoal] = useState(null);
+  const [logs, setLogs] = useState(() => loadData()?.logs || []);
+  const [tab, setTab] = useState("dashboard");
+
+  useEffect(() => {
+    saveData({ savings, monthly, targetDate, logs });
+  }, [savings, monthly, targetDate, logs]);
+
+  const totalSaved = Object.values(savings).reduce((s, v) => s + Number(v), 0);
+  const totalRemaining = TOTAL_TARGET - totalSaved;
+  const overallPct = Math.min(100, (totalSaved / TOTAL_TARGET) * 100);
+
+  function addSaving(goalId) {
+    const amt = Number(addAmounts[goalId]);
+    if (!amt || amt <= 0) return;
+    const goal = GOALS.find(g => g.id === goalId);
+    setSavings(prev => ({ ...prev, [goalId]: (prev[goalId] || 0) + amt }));
+    setLogs(prev => [
+      { date: new Date().toLocaleDateString("en-IN"), goal: goal.label, amount: amt, id: Date.now() },
+      ...prev.slice(0, 49)
+    ]);
+    setAddAmounts(prev => ({ ...prev, [goalId]: "" }));
+    setActiveGoal(null);
+  }
+
+  function resetGoal(goalId) {
+    setSavings(prev => ({ ...prev, [goalId]: 0 }));
+  }
+
+  const daysLeft = daysUntil(targetDate);
+  const monthsLeft = Math.max(1, daysLeft / 30);
+  const neededPerMonth = totalRemaining > 0 ? Math.ceil(totalRemaining / monthsLeft) : 0;
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      background: "#0a0a0a",
+      fontFamily: "'Inter', 'Roboto', sans-serif",
+      color: "#fff",
+      paddingBottom: 40,
+    }}>
+      {/* Header */}
+      <div style={{
+        background: "#111",
+        borderBottom: "2px solid #F7C948",
+        padding: "18px 20px 14px",
+        position: "sticky", top: 0, zIndex: 10,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 22 }}>⚡</span>
+          <div>
+            <div style={{ fontSize: 13, color: "#F7C948", fontWeight: 700, letterSpacing: 1 }}>HSES™ PERSONAL</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", lineHeight: 1.1 }}>Bihar Shift Tracker</div>
+          </div>
+          <div style={{ marginLeft: "auto", textAlign: "right" }}>
+            <div style={{ fontSize: 11, color: "#888" }}>Total Target</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#F7C948" }}>{fmtINR(TOTAL_TARGET)}</div>
+          </div>
+        </div>
+
+        {/* Tab Nav */}
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          {["dashboard", "goals", "log"].map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{
+              padding: "6px 16px",
+              borderRadius: 6,
+              border: "none",
+              background: tab === t ? "#F7C948" : "#1e1e1e",
+              color: tab === t ? "#000" : "#aaa",
+              fontWeight: tab === t ? 700 : 500,
+              fontSize: 13,
+              cursor: "pointer",
+              textTransform: "capitalize",
+            }}>{t === "log" ? "📋 Log" : t === "goals" ? "🎯 Goals" : "📊 Overview"}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 500, margin: "0 auto", padding: "0 16px" }}>
+
+        {/* DASHBOARD TAB */}
+        {tab === "dashboard" && (
+          <>
+            {/* Big progress ring style card */}
+            <div style={{
+              background: "#111",
+              border: "1px solid #222",
+              borderRadius: 16,
+              padding: 20,
+              marginTop: 20,
+              textAlign: "center",
+            }}>
+              <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>Total Jama Hua</div>
+              <div style={{ fontSize: 36, fontWeight: 900, color: "#F7C948" }}>{fmtINR(totalSaved)}</div>
+              <div style={{ fontSize: 13, color: "#555" }}>of {fmtINR(TOTAL_TARGET)}</div>
+
+              {/* Progress bar */}
+              <div style={{ background: "#1e1e1e", borderRadius: 8, height: 12, margin: "14px 0 6px", overflow: "hidden" }}>
+                <div style={{
+                  width: `${overallPct}%`,
+                  height: "100%",
+                  background: "linear-gradient(90deg, #F7C948, #ffdd00)",
+                  borderRadius: 8,
+                  transition: "width 0.5s ease",
+                }} />
+              </div>
+              <div style={{ fontSize: 13, color: "#F7C948", fontWeight: 700 }}>{overallPct.toFixed(1)}% Complete</div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 16 }}>
+                <div style={{ background: "#1a1a1a", borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontSize: 11, color: "#888" }}>Baaki Hai</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>{fmtINR(totalRemaining)}</div>
+                </div>
+                <div style={{ background: "#1a1a1a", borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontSize: 11, color: "#888" }}>Per Month Chahiye</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: neededPerMonth > monthly ? "#ff6b6b" : "#4ade80" }}>
+                    {fmtINR(neededPerMonth)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Settings */}
+            <div style={{
+              background: "#111",
+              border: "1px solid #222",
+              borderRadius: 16,
+              padding: 18,
+              marginTop: 14,
+            }}>
+              <div style={{ fontWeight: 700, marginBottom: 12, color: "#F7C948", fontSize: 13 }}>⚙️ Settings</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Monthly Saving Capacity</label>
+                  <input
+                    type="number"
+                    value={monthly}
+                    onChange={e => setMonthly(Number(e.target.value))}
+                    style={inputStyle}
+                    placeholder="e.g. 15000"
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Target Shift Date</label>
+                  <input
+                    type="date"
+                    value={targetDate}
+                    onChange={e => setTargetDate(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+              <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div style={{ background: "#1a1a1a", borderRadius: 10, padding: 10 }}>
+                  <div style={{ fontSize: 11, color: "#888" }}>Days Bache Hain</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>{daysLeft}</div>
+                </div>
+                <div style={{ background: "#1a1a1a", borderRadius: 10, padding: 10 }}>
+                  <div style={{ fontSize: 11, color: "#888" }}>ETA (Current Rate)</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#4ade80" }}>
+                    {etaFromSavings(totalSaved, TOTAL_TARGET, monthly)}
+                  </div>
+                </div>
+              </div>
+
+              {neededPerMonth > monthly && totalRemaining > 0 && (
+                <div style={{
+                  marginTop: 12,
+                  background: "#2a1010",
+                  border: "1px solid #ff6b6b44",
+                  borderRadius: 8,
+                  padding: 10,
+                  fontSize: 12,
+                  color: "#ff9a9a",
+                }}>
+                  ⚠️ Current saving rate se target date miss ho sakti hai. Monthly {fmtINR(neededPerMonth)} chahiye, tumhara current plan {fmtINR(monthly)} hai.
+                </div>
+              )}
+            </div>
+
+            {/* Mini goal bars */}
+            <div style={{ marginTop: 14 }}>
+              {GOALS.map(g => {
+                const saved = savings[g.id] || 0;
+                const pct = Math.min(100, (saved / g.target) * 100);
+                return (
+                  <div key={g.id} style={{
+                    background: "#111",
+                    border: "1px solid #1e1e1e",
+                    borderRadius: 10,
+                    padding: "10px 14px",
+                    marginBottom: 8,
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <span style={{ fontSize: 13, color: pct >= 100 ? "#4ade80" : "#ddd" }}>{g.emoji} {g.label}</span>
+                      <span style={{ fontSize: 12, color: "#F7C948", fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>
+                        {fmtINR(saved)}/{fmtINR(g.target)}
+                      </span>
+                    </div>
+                    <div style={{ background: "#1a1a1a", borderRadius: 4, height: 6, overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: pct >= 100 ? "#4ade80" : "#F7C948", borderRadius: 4 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* GOALS TAB */}
+        {tab === "goals" && (
+          <div style={{ marginTop: 20 }}>
+            <div style={{ fontSize: 13, color: "#888", marginBottom: 14 }}>Har goal mein paisa add karo 👇</div>
+            {GOALS.map(g => {
+              const saved = savings[g.id] || 0;
+              const pct = Math.min(100, (saved / g.target) * 100);
+              const done = pct >= 100;
+              const isActive = activeGoal === g.id;
+              return (
+                <div key={g.id} style={{
+                  background: "#111",
+                  border: `1px solid ${done ? "#4ade8044" : isActive ? "#F7C94844" : "#1e1e1e"}`,
+                  borderRadius: 14,
+                  padding: 16,
+                  marginBottom: 12,
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: done ? "#4ade80" : "#fff" }}>
+                        {g.emoji} {g.label}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>
+                        {fmtINR(saved)} jama / {fmtINR(g.target)} target
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: done ? "#4ade80" : "#F7C948", marginLeft: 10 }}>
+                      {pct.toFixed(0)}%
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#1a1a1a", borderRadius: 6, height: 8, margin: "10px 0", overflow: "hidden" }}>
+                    <div style={{ width: `${pct}%`, height: "100%", background: done ? "#4ade80" : "#F7C948", borderRadius: 6, transition: "width 0.4s" }} />
+                  </div>
+
+                  {done ? (
+                    <div style={{ fontSize: 13, color: "#4ade80", fontWeight: 700 }}>✅ Target Complete!</div>
+                  ) : (
+                    <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                      {!isActive ? (
+                        <button onClick={() => setActiveGoal(g.id)} style={{
+                          ...btnStyle, background: "#F7C948", color: "#000", flex: 1,
+                        }}>+ Paisa Add Karo</button>
+                      ) : (
+                        <>
+                          <input
+                            type="number"
+                            placeholder="Amount ₹"
+                            value={addAmounts[g.id]}
+                            onChange={e => setAddAmounts(prev => ({ ...prev, [g.id]: e.target.value }))}
+                            style={{ ...inputStyle, flex: 1 }}
+                            autoFocus
+                            onKeyDown={e => e.key === "Enter" && addSaving(g.id)}
+                          />
+                          <button onClick={() => addSaving(g.id)} style={{ ...btnStyle, background: "#F7C948", color: "#000", padding: "8px 16px" }}>✓</button>
+                          <button onClick={() => setActiveGoal(null)} style={{ ...btnStyle, background: "#1e1e1e", color: "#888", padding: "8px 12px" }}>✗</button>
+                        </>
+                      )}
+                      {saved > 0 && !isActive && (
+                        <button onClick={() => resetGoal(g.id)} style={{ ...btnStyle, background: "#1e1e1e", color: "#888", fontSize: 12 }}>Reset</button>
+                      )}
+                    </div>
+                  )}
+
+                  {!done && (
+                    <div style={{ fontSize: 11, color: "#555", marginTop: 8 }}>
+                      ETA: {etaFromSavings(saved, g.target, Math.round(monthly * (g.target / TOTAL_TARGET)))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* LOG TAB */}
+        {tab === "log" && (
+          <div style={{ marginTop: 20 }}>
+            <div style={{ fontSize: 13, color: "#888", marginBottom: 14 }}>Recent saving entries 📋</div>
+            {logs.length === 0 ? (
+              <div style={{ textAlign: "center", color: "#444", padding: 40 }}>
+                Abhi koi entry nahi hai.<br />Goals tab se paisa add karo.
+              </div>
+            ) : logs.map(l => (
+              <div key={l.id} style={{
+                background: "#111",
+                border: "1px solid #1e1e1e",
+                borderRadius: 10,
+                padding: "12px 14px",
+                marginBottom: 8,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}>
+                <div>
+                  <div style={{ fontSize: 13, color: "#ddd" }}>{l.goal}</div>
+                  <div style={{ fontSize: 11, color: "#555" }}>{l.date}</div>
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#4ade80" }}>+{fmtINR(l.amount)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const inputStyle = {
+  width: "100%",
+  background: "#1a1a1a",
+  border: "1px solid #333",
+  borderRadius: 8,
+  padding: "8px 12px",
+  color: "#fff",
+  fontSize: 14,
+  boxSizing: "border-box",
+};
+
+const btnStyle = {
+  border: "none",
+  borderRadius: 8,
+  padding: "8px 14px",
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: "pointer",
+};
